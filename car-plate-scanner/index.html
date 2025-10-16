@@ -81,50 +81,27 @@ function normalizePlate(s) {
   return s;
 }
 
-// Call OCR.Space API (client-side). WARNING: putting API key here is insecure.
-// Replace with a server-side proxy in production.
+// Call your Netlify backend function (keeps API key secret)
 async function recognizePlateAPI(canvas) {
-  // ensure we have a frame
   if (!canvas.width || !canvas.height) throw new Error('No video frame available');
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-  // ---- Replace the API call below with a call to your own backend in production ----
-  const response = await fetch('https://api.ocr.space/parse/image', {
+  // Call your secure Netlify function instead of OCR.Space directly
+  const response = await fetch('/.netlify/functions/ocr', {
     method: 'POST',
-    headers: {
-      'apikey': 'YOUR_API_KEY_HERE', // <- replace for testing OR better: call your server endpoint
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      base64Image: dataUrl,
-      language: 'eng',
-      isOverlayRequired: false,
-      OCREngine: 2,
-      detectOrientation: true
-    })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base64Image: dataUrl })
   });
 
-  if (!response.ok) {
-    throw new Error('OCR server returned HTTP ' + response.status);
-  }
+  if (!response.ok) throw new Error('Server error ' + response.status);
 
   const json = await response.json();
-
-  // handle API-level errors
-  if (json.IsErroredOnProcessing) {
-    const errs = json.ErrorMessage || json.ErrorDetails || 'Unknown OCR error';
-    throw new Error(Array.isArray(errs) ? errs.join('; ') : errs);
-  }
-
-  if (!json.ParsedResults || !json.ParsedResults[0]) return '';
-
-  const text = json.ParsedResults[0].ParsedText || '';
-  // strip anything except letters/digits and return
+  const text = json?.ParsedResults?.[0]?.ParsedText || '';
   return text.replace(/[^A-Z0-9]/gi, '').trim();
 }
 
-// Shared function to add plate to the list (used by both capture success and Add button)
+// Shared function to add plate to the list
 function addPlateToList(plate) {
   if (!plate) return;
   const existing = Array.from(platesList.querySelectorAll('li')).map(li => li.dataset.plate);
@@ -137,14 +114,12 @@ function addPlateToList(plate) {
   li.innerHTML = `<span class="plate">${plate}</span> <button class="del">Remove</button>`;
   platesList.appendChild(li);
   li.querySelector('.del').addEventListener('click', () => li.remove());
-  // hide the result area after adding
   ocrInput.value = '';
   ocrResult.style.display = 'none';
 }
 
 // Capture button flow
 captureBtn.addEventListener('click', async () => {
-  // check video is ready
   if (video.videoWidth === 0 || video.videoHeight === 0) {
     alert('Camera not ready yet — wait a second and try again.');
     return;
@@ -165,7 +140,7 @@ captureBtn.addEventListener('click', async () => {
     if (cleaned.length >= 5 && cleaned.length <= 8) {
       const plate = normalizePlate(cleaned);
       ocrInput.value = plate;
-      // Auto-add to list (optional) — if you'd rather let the user confirm, comment out next line
+      // Optionally auto-add to list
       // addPlateToList(plate);
     } else {
       ocrInput.value = '';
@@ -206,6 +181,6 @@ exportBtn.addEventListener('click', () => {
 clearBtn.addEventListener('click', () => {
   if (confirm('Clear the list?')) platesList.innerHTML = '';
 });
-  </script>
+</script>
 </body>
 </html>
