@@ -137,7 +137,7 @@ captureBtn.addEventListener('click', async () => {
 
   try {
     const cleaned = await recognizePlateAPI(canvas);
-    console.log('Raw OCR text:', cleaned);
+    alert('Raw OCR text: ' + cleaned);
     if (cleaned.length >= 5 && cleaned.length <= 8) {
       const plate = normalizePlate(cleaned);
       ocrInput.value = plate;
