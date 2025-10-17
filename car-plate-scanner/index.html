@@ -85,7 +85,19 @@ function normalizePlate(s) {
 async function recognizePlateAPI(canvas) {
   if (!canvas.width || !canvas.height) throw new Error('No video frame available');
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+  // Convert the entire frame to high-contrast black & white (no cropping)
+const ctx = canvas.getContext('2d');
+const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+const d = imgData.data;
+
+for (let i = 0; i < d.length; i += 4) {
+  const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+  const v = avg > 128 ? 255 : 0; // simple threshold
+  d[i] = d[i + 1] = d[i + 2] = v;
+}
+
+ctx.putImageData(imgData, 0, 0);
+const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
   // Call your secure Netlify function instead of OCR.Space directly
   const response = await fetch('/.netlify/functions/ocr', {
