@@ -18,7 +18,7 @@ export async function handler(event) {
         base64Image,
         language: 'eng',
         isOverlayRequired: false,
-        OCREngine: 2,
+        OCREngine: 3,
         detectOrientation: true
       })
     });
