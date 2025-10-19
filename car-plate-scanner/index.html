@@ -25,6 +25,7 @@
       margin-left:8px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #debugText { font-size:0.9rem; color:#666; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -46,6 +47,8 @@
     <span id="busySpinner" style="display:none;"><span class="spinner"></span></span>
   </div>
 
+  <div id="debugText" style="display:none;"></div>
+
   <h3>Plates</h3>
   <ul id="platesList"></ul>
   
@@ -60,6 +63,7 @@ const platesList = document.getElementById('platesList');
 const exportBtn = document.getElementById('exportBtn');
 const clearBtn = document.getElementById('clearBtn');
 const busySpinner = document.getElementById('busySpinner');
+const debugText = document.getElementById('debugText');
 
 // Start camera
 async function startCamera() {
@@ -81,36 +85,46 @@ function normalizePlate(s) {
   return s;
 }
 
-// Call your Netlify backend function (keeps API key secret)
+// Call your Netlify backend function (which should call Plate Recognizer)
 async function recognizePlateAPI(canvas) {
   if (!canvas.width || !canvas.height) throw new Error('No video frame available');
 
   // Convert the entire frame to high-contrast black & white (no cropping)
-const ctx = canvas.getContext('2d');
-const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-const d = imgData.data;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    const v = avg > 128 ? 255 : 0; // simple threshold
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(imgData, 0, 0);
 
-for (let i = 0; i < d.length; i += 4) {
-  const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-  const v = avg > 128 ? 255 : 0; // simple threshold
-  d[i] = d[i + 1] = d[i + 2] = v;
-}
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
-ctx.putImageData(imgData, 0, 0);
-const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-
-  // Call your secure Netlify function instead of OCR.Space directly
+  // Call your secure Netlify function instead of Plate Recognizer directly
   const response = await fetch('/.netlify/functions/ocr', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ base64Image: dataUrl })
   });
 
-  if (!response.ok) throw new Error('Server error ' + response.status);
+  if (!response.ok) {
+    // try to get error text from server
+    let text = 'Server error ' + response.status;
+    try { text = await response.text(); } catch(e) {}
+    throw new Error(text);
+  }
 
   const json = await response.json();
-  const text = json?.ParsedResults?.[0]?.ParsedText || '';
-  return text.replace(/[^A-Z0-9]/gi, '').trim();
+
+  // Plate Recognizer response format: { results: [ { plate: 'ABC123', score: 0.97, ... } ] }
+  const plateObj = json?.results?.[0] || null;
+  const plateText = plateObj?.plate ? String(plateObj.plate).toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+  const confidence = plateObj?.score ? Math.round(plateObj.score * 100) : null;
+
+  // return an object with text + confidence + raw for debugging
+  return { text: plateText, confidence, raw: json };
 }
 
 // Shared function to add plate to the list
@@ -145,24 +159,30 @@ captureBtn.addEventListener('click', async () => {
   ocrResult.style.display = 'block';
   ocrInput.value = 'Scanning...';
   busySpinner.style.display = 'inline-block';
+  debugText.style.display = 'none';
   captureBtn.disabled = true;
 
   try {
-    const cleaned = await recognizePlateAPI(canvas);
-    alert('Raw OCR text: ' + cleaned);
-    if (cleaned.length >= 5 && cleaned.length <= 8) {
-      const plate = normalizePlate(cleaned);
+    const result = await recognizePlateAPI(canvas);
+    // show raw debug info on mobile (quick)
+    if (result.text) {
+      // found a plate
+      const plate = normalizePlate(result.text);
       ocrInput.value = plate;
-      // Optionally auto-add to list
-      // addPlateToList(plate);
+      debugText.style.display = 'block';
+      debugText.innerText = `Plate: ${plate} ${result.confidence ? '(' + result.confidence + '%)' : ''}`;
+      alert('Detected plate: ' + plate + (result.confidence ? ' (' + result.confidence + '%)' : ''));
     } else {
-      ocrInput.value = '';
-      console.log('Ignored: not a valid plate or no text found');
+      // no plate text
+      debugText.style.display = 'block';
+      debugText.innerText = 'No plate detected. Raw API response logged to console.';
+      console.log('Plate API raw response:', result.raw);
       alert('No valid plate found. Try a clearer shot or move closer.');
+      ocrInput.value = '';
     }
   } catch (err) {
     console.error('OCR error', err);
-    alert('OCR failed: ' + err.message);
+    alert('OCR failed: ' + (err.message || err));
     ocrInput.value = '';
   } finally {
     busySpinner.style.display = 'none';
@@ -194,6 +214,6 @@ exportBtn.addEventListener('click', () => {
 clearBtn.addEventListener('click', () => {
   if (confirm('Clear the list?')) platesList.innerHTML = '';
 });
-</script>
+  </script>
 </body>
 </html>
