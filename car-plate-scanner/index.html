@@ -25,12 +25,12 @@
       margin-left:8px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #debugText { font-size:0.9rem; color:#666; margin-top:8px; }
+    #debugText { font-size:0.9rem; color:#666; margin-top:8px; white-space:pre-wrap; }
   </style>
 </head>
 <body>
   <h2>Plate Scanner — MVP</h2>
-  <p class="small">Point camera at the plate, press <b>Capture</b>, confirm/edit the recognized plate, then add to list. Export as .txt when done.</p>
+  <p class="small">Point camera at the plate, press <b>Capture</b>, edit/confirm the recognized plate, then add to list. Export as .txt when done.</p>
 
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas" style="display:none;"></canvas>
@@ -47,12 +47,20 @@
     <span id="busySpinner" style="display:none;"><span class="spinner"></span></span>
   </div>
 
-  <div id="debugText" style="display:none;"></div>
+  <div id="debugText" style="display:none"></div>
 
   <h3>Plates</h3>
   <ul id="platesList"></ul>
-  
-  <script>
+
+<script>
+/*
+  Minimal Plate Scanner frontend
+  - Sends a single captured frame (optionally preprocessed) to /.netlify/functions/ocr
+  - Expects Plate Recognizer JSON back and uses the first result
+  - Set debug = true while testing on mobile to see API raw response
+*/
+
+const debug = false; // set to true to enable alerts and debug panel (temporary)
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const captureBtn = document.getElementById('captureBtn');
@@ -65,7 +73,6 @@ const clearBtn = document.getElementById('clearBtn');
 const busySpinner = document.getElementById('busySpinner');
 const debugText = document.getElementById('debugText');
 
-// Start camera
 async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
@@ -76,7 +83,6 @@ async function startCamera() {
 }
 startCamera();
 
-// Normalize plate format (e.g., AB12CDE → AB12 CDE)
 function normalizePlate(s) {
   if (!s) return '';
   s = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -85,71 +91,69 @@ function normalizePlate(s) {
   return s;
 }
 
-// Call your Netlify backend function (which should call Plate Recognizer)
-async function recognizePlateAPI(canvas) {
-  if (!canvas.width || !canvas.height) throw new Error('No video frame available');
+// Sends image to your Netlify function which calls Plate Recognizer.
+// Applies a gentle B/W threshold to help recognition (no cropping).
+async function recognizePlateAPI(canvasEl) {
+  if (!canvasEl.width || !canvasEl.height) throw new Error('No video frame available');
 
-  // Convert the entire frame to high-contrast black & white (no cropping)
-  const ctx = canvas.getContext('2d');
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // gentle binarize (keeps whole frame, non-destructive)
+  const ctx = canvasEl.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
-    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-    const v = avg > 128 ? 255 : 0; // simple threshold
-    d[i] = d[i + 1] = d[i + 2] = v;
+    const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+    // soft threshold: move values towards black or white but keep edges
+    const v = avg > 140 ? 255 : (avg < 100 ? 0 : Math.round((avg - 100) * (255/40)));
+    d[i] = d[i+1] = d[i+2] = v;
   }
   ctx.putImageData(imgData, 0, 0);
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+  // reduce quality slightly for faster upload
+  const dataUrl = canvasEl.toDataURL('image/jpeg', 0.7);
 
-  // Call your secure Netlify function instead of Plate Recognizer directly
-  const response = await fetch('/.netlify/functions/ocr', {
+  // call Netlify function
+  const res = await fetch('/.netlify/functions/ocr', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ base64Image: dataUrl })
   });
 
-  if (!response.ok) {
-    // try to get error text from server
-    let text = 'Server error ' + response.status;
-    try { text = await response.text(); } catch(e) {}
-    throw new Error(text);
+  if (!res.ok) {
+    const text = await res.text().catch(()=>`HTTP ${res.status}`);
+    throw new Error(text || ('Server error ' + res.status));
   }
 
-  const json = await response.json();
+  const json = await res.json();
+  if (debug) {
+    debugText.style.display = 'block';
+    debugText.textContent = JSON.stringify(json, null, 2);
+    alert('Raw API response (debug):\n\n' + JSON.stringify(json, null, 2));
+  }
 
-  // Plate Recognizer response format: { results: [ { plate: 'ABC123', score: 0.97, ... } ] }
-  const plateObj = json?.results?.[0] || null;
-  const plateText = plateObj?.plate ? String(plateObj.plate).toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
-  const confidence = plateObj?.score ? Math.round(plateObj.score * 100) : null;
+  // Plate Recognizer returns results[] with plate text & score
+  const results = json?.results || [];
+  if (!results.length) return { text: '', confidence: null, raw: json };
 
-  // return an object with text + confidence + raw for debugging
-  return { text: plateText, confidence, raw: json };
+  const best = results[0];
+  const plateRaw = best?.plate ? String(best.plate).toUpperCase().replace(/[^A-Z0-9]/g,'') : '';
+  const score = typeof best?.score === 'number' ? Math.round(best.score * 100) : null;
+  return { text: plateRaw, confidence: score, raw: json };
 }
 
-// Shared function to add plate to the list
 function addPlateToList(plate) {
   if (!plate) return;
   const existing = Array.from(platesList.querySelectorAll('li')).map(li => li.dataset.plate);
-  if (existing.includes(plate)) {
-    alert('Plate already in list');
-    return;
-  }
+  if (existing.includes(plate)) { alert('Plate already in list'); return; }
   const li = document.createElement('li');
   li.dataset.plate = plate;
   li.innerHTML = `<span class="plate">${plate}</span> <button class="del">Remove</button>`;
   platesList.appendChild(li);
-  li.querySelector('.del').addEventListener('click', () => li.remove());
-  ocrInput.value = '';
-  ocrResult.style.display = 'none';
+  li.querySelector('.del').addEventListener('click', ()=> li.remove());
 }
 
-// Capture button flow
+// Capture flow
 captureBtn.addEventListener('click', async () => {
-  if (video.videoWidth === 0 || video.videoHeight === 0) {
-    alert('Camera not ready yet — wait a second and try again.');
-    return;
-  }
+  if (video.videoWidth === 0 || video.videoHeight === 0) { alert('Camera not ready — try again'); return; }
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -163,26 +167,23 @@ captureBtn.addEventListener('click', async () => {
   captureBtn.disabled = true;
 
   try {
-    const result = await recognizePlateAPI(canvas);
-    // show raw debug info on mobile (quick)
-    if (result.text) {
-      // found a plate
-      const plate = normalizePlate(result.text);
+    const { text, confidence, raw } = await recognizePlateAPI(canvas);
+    if (text && text.length >= 4) { // accept 4+ characters (looser)
+      const plate = normalizePlate(text);
       ocrInput.value = plate;
       debugText.style.display = 'block';
-      debugText.innerText = `Plate: ${plate} ${result.confidence ? '(' + result.confidence + '%)' : ''}`;
-      alert('Detected plate: ' + plate + (result.confidence ? ' (' + result.confidence + '%)' : ''));
+      debugText.textContent = `Plate: ${plate}${confidence ? ' ('+confidence+'%)' : ''}`;
+      // don't auto-add — let user confirm and press "Add"
     } else {
-      // no plate text
       debugText.style.display = 'block';
-      debugText.innerText = 'No plate detected. Raw API response logged to console.';
-      console.log('Plate API raw response:', result.raw);
-      alert('No valid plate found. Try a clearer shot or move closer.');
+      debugText.textContent = `No plate detected. Raw API response logged to console.`;
+      console.log('Plate API raw response:', raw);
+      alert('No valid plate found. Try a clearer/closer shot with less glare.');
       ocrInput.value = '';
     }
   } catch (err) {
     console.error('OCR error', err);
-    alert('OCR failed: ' + (err.message || err));
+    alert('OCR failed: ' + err.message);
     ocrInput.value = '';
   } finally {
     busySpinner.style.display = 'none';
@@ -190,30 +191,29 @@ captureBtn.addEventListener('click', async () => {
   }
 });
 
-// Add button (lets user confirm / edit before adding)
+// Add / export / clear handlers
 addBtn.addEventListener('click', () => {
   const val = ocrInput.value.trim();
   if (!val) return alert('Enter a plate before adding');
   addPlateToList(val);
+  ocrInput.value = '';
+  ocrResult.style.display = 'none';
 });
 
-// Export plates
 exportBtn.addEventListener('click', () => {
   const items = Array.from(platesList.querySelectorAll('li')).map(li => li.dataset.plate);
-  if (items.length === 0) return alert('No plates to export');
+  if (!items.length) return alert('No plates to export');
   const blob = new Blob([items.join('\n')], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
+  a.href = URL.createObjectURL(blob);
   a.download = 'plates.txt';
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(a.href);
 });
 
-// Clear list
 clearBtn.addEventListener('click', () => {
   if (confirm('Clear the list?')) platesList.innerHTML = '';
 });
-  </script>
+</script>
 </body>
 </html>
