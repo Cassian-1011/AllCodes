@@ -1,5 +1,6 @@
 // netlify/functions/ocr.js
-// This runs server-side on Netlify (hides your API key)
+// Serverless function that calls the Plate Recognizer Snapshot Cloud API
+
 export async function handler(event) {
   try {
     const body = JSON.parse(event.body || '{}');
@@ -8,20 +9,24 @@ export async function handler(event) {
       return { statusCode: 400, body: 'Missing base64Image' };
     }
 
-    const response = await fetch('https://api.ocr.space/parse/image', {
+    const response = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
       method: 'POST',
       headers: {
-        apikey: process.env.OCR_SPACE_KEY, // stored securely in Netlify
+        Authorization: `Token ${process.env.PLATE_RECOGNIZER_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        base64Image,
-        language: 'eng',
-        isOverlayRequired: false,
-        OCREngine: 3,
-        detectOrientation: true
+        upload: base64Image,
+        regions: ['gb'],
+        config: { mode: 'fast' }
       })
     });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(()=>`HTTP ${response.status}`);
+      console.error('Plate Recognizer error:', errText);
+      return { statusCode: response.status, body: JSON.stringify({ error: errText }) };
+    }
 
     const json = await response.json();
     return {
@@ -30,6 +35,7 @@ export async function handler(event) {
       body: JSON.stringify(json)
     };
   } catch (err) {
-    return { statusCode: 500, body: String(err) };
+    console.error('Function error:', err);
+    return { statusCode: 500, body: JSON.stringify({ error: String(err) }) };
   }
 }
