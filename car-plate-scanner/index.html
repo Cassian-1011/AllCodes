@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Car Park Plate Scanner - MVP</title>
+  <title>Registration Plate Scanner </title>
   <style>
     body { font-family: Arial, sans-serif; padding: 12px; max-width: 720px; margin: auto; }
     video, canvas { width: 100%; border-radius: 8px; background: #000; }
@@ -29,8 +29,8 @@
   </style>
 </head>
 <body>
-  <h2>Plate Scanner — MVP</h2>
-  <p class="small">Point camera at the plate, press <b>Capture</b>, edit/confirm the recognized plate, then add to list. Export as .txt when done.</p>
+  <h2>Plate Scanner</h2>
+  <p class="small">Point camera at the plate, press <b>Capture</b>, edit/confirm the recognised plate, then add to list. Export as .txt when done.</p>
 
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas" style="display:none;"></canvas>
@@ -60,7 +60,7 @@
   - Set debug = true while testing on mobile to see API raw response
 */
 
-const debug = true; // set to true to enable alerts and debug panel (temporary)
+const debug = false; // set to true to enable alerts and debug panel (temporary)
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const captureBtn = document.getElementById('captureBtn');
@@ -91,7 +91,7 @@ function normalizePlate(s) {
   return s;
 }
 
-// Sends image to your Netlify function which calls Plate Recognizer.
+// Sends image to your Netlify function which calls Plate Recogniser.
 // Applies a gentle B/W threshold to help recognition (no cropping).
 async function recognizePlateAPI(canvasEl) {
   if (!canvasEl.width || !canvasEl.height) throw new Error('No video frame available');
