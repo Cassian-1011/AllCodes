@@ -57,13 +57,12 @@
 
 <script>
 /*
-  Minimal Plate Scanner frontend
-  - Sends a single captured frame (optionally preprocessed) to /.netlify/functions/ocr
-  - Expects Plate Recognizer JSON back and uses the first result
-  - Set debug = true while testing on mobile to see API raw response
+  sends a single captured frame to /.netlify/functions/ocr
+  plate Recognizer returns JSON back and uses first result
+  Set debug = true while testing on mobile to see API raw response
 */
 
-const debug = false; // set to true to enable alerts and debug panel (temporary)
+const debug = false; //stop alerts
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const captureBtn = document.getElementById('captureBtn');
@@ -94,24 +93,21 @@ function normalizePlate(s) {
   return s;
 }
 
-// Sends image to your Netlify function which calls Plate Recogniser.
-// Applies a gentle B/W threshold to help recognition (no cropping).
+// Sends image to Netlify function which calls Plate Recognizer.
 async function recognizePlateAPI(canvasEl) {
   if (!canvasEl.width || !canvasEl.height) throw new Error('No video frame available');
-
-  // gentle binarize (keeps whole frame, non-destructive)
   const ctx = canvasEl.getContext('2d');
   const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
     const avg = (d[i] + d[i+1] + d[i+2]) / 3;
-    // soft threshold: move values towards black or white but keep edges
+    
     const v = avg > 140 ? 255 : (avg < 100 ? 0 : Math.round((avg - 100) * (255/40)));
     d[i] = d[i+1] = d[i+2] = v;
   }
   ctx.putImageData(imgData, 0, 0);
 
-  // reduce quality slightly for faster upload
+  
   const dataUrl = canvasEl.toDataURL('image/jpeg', 0.7);
 
   // call Netlify function
