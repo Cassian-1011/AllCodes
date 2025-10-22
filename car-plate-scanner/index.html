@@ -5,27 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Registration Plate Scanner </title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 12px; max-width: 720px; margin: auto; }
+    body { background: linear-gradient(to bottom,#5910B3,#A511BF); font-family: Buenos Aires, Avenir, Futura, Arial, SansSerif, sans-serif; padding: 12px; max-width: 720px; margin: auto; }
     video, canvas { width: 100%; border-radius: 8px; background: #000; }
     .controls { display:flex; gap:8px; margin-top:8px; }
     .controls button { flex:1; padding:10px; font-size:16px; }
     ul { padding-left: 20px; }
     li { margin-bottom:6px; }
     .plate { font-weight:600; margin-right:10px; }
-    .small { font-size:0.9rem; color:#555; }
+    .small { font-size:0.9rem; color:#51BADC; }
     .spinner {
       display:inline-block;
       width:18px;
       height:18px;
       border:3px solid rgba(0,0,0,0.15);
-      border-left-color: #333;
+      border-left-color:#51BADC;
       border-radius:50%;
       animation: spin 0.8s linear infinite;
       vertical-align: middle;
       margin-left:8px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #debugText { font-size:0.9rem; color:#666; margin-top:8px; white-space:pre-wrap; }
+    #debugText { font-size:0.9rem; color:#51BADC; margin-top:8px; white-space:pre-wrap; }
+    h2 {color: #51BADC;}
+    button{background-color: #51BADC;color: #5910B3;border: #A511BF;}
+    h3 {color: #51BADC;}
   </style>
 </head>
 <body>
